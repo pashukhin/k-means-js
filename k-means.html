@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Кластеризация методом k-means.</title>
+    <script src="http://api-maps.yandex.ru/2.0/?load=package.standard,package.geoObjects&lang=ru-RU&coordorder=longlat" type="text/javascript"></script>
+<script type="text/javascript">
+var myMap;
+
+var pointCount = 1000;
+var clusterCount = 30;
+var mapObjects = [];
+var points = [];
+var lb, tr, dx, dy;
+var distanceMap = [];
+var maxIterationsCount = 100;
+var colors = ["#ff0000","#888800","#00ff00","#008888","#0000ff","#880088"];
+var centerPoint;
+
+ymaps.ready(init);
+
+Point = function(x,y) {
+    return {x:x, y:y};
+}
+
+function rndBmtPoint() {
+    var x = 0, y = 0, rds, c;
+
+    // Get two random numbers from -1 to 1.
+    // If the radius is zero or greater than 1, throw them out and pick two new ones
+    // Rejection sampling throws away about 20% of the pairs.
+    do {
+    x = Math.random()*2-1;
+    y = Math.random()*2-1;
+    rds = x*x + y*y;
+    }
+    while (rds == 0 || rds > 1)
+
+    // This magic is the Box-Muller Transform
+    c = Math.sqrt(-2*Math.log(rds)/rds)/10;
+
+    //console.log(c);
+
+    // This function is quite efficient so don't be afraid to throw one away if you don't need both.
+    return Point(x*c, y*c);
+}
+
+function center(bottomLeft, topRight){
+    return   Point(bottomLeft.x+(topRight.x - bottomLeft.x)/2,bottomLeft.y+(topRight.y - bottomLeft.y)/2);
+}
+
+function init () {
+    myMap = new ymaps.Map('map', {
+        center:[37.64, 55.76],
+        zoom:10
+    });
+
+    myMap.controls.add('zoomControl', { left: 5, top: 5 });
+
+    document.getElementById('initButton').onclick = function () {
+  	generatePoints();
+        var clusters = clasterize();
+        drawClusters(clusters);
+    };
+}
+
+function drawClusters(clusters){
+    var i,j;
+    for(i=0;i<clusters.length;i++){
+        var ymPoints = [];
+        for(j=0;j<clusters[i].points.length;j++){
+            ymPoints.push([clusters[i].centroid.x,clusters[i].centroid.y]);
+            ymPoints.push([clusters[i].points[j].x,clusters[i].points[j].y]);
+        };
+        var route = new ymaps.Polyline(
+            ymPoints,
+            {balloonContent: "cluster" + i},
+            {strokeColor: colors[i%colors.length],strokeWidth: 4,strokeOpacity: 0.5}
+        );
+        myMap.geoObjects.add(route);
+        mapObjects.push(route);    
+        var marker = new ymaps.Placemark(
+            [clusters[i].centroid.x,clusters[i].centroid.y],
+            {iconContent:i,balloonContent: 'points: '+clusters[i].points.length},
+            {preset: 'twirl#violetIcon'}
+        );
+        myMap.geoObjects.add(marker);
+        mapObjects.push(marker); 
+    };
+}
+
+function clearMap(){
+    while(mapObjects.length)    {
+    	myMap.geoObjects.remove(mapObjects.pop());
+    };
+    while(points.length){
+        points.pop();
+    };
+}
+
+function initBounds(){
+    var bounds = myMap.getBounds();
+    lb = Point(bounds[0][0],bounds[0][1]);
+    rt = Point(bounds[1][0],bounds[1][1]);
+    dx = rt.x - lb.x;
+    dy = rt.y - lb.y;
+    centerPoint = center(lb,rt);
+}
+
+function randomPoint(){ //return random point in actual bounds
+    return Point(lb.x+Math.random()*dx,lb.y+Math.random()*dy);
+}
+
+function normalDistributedRandomPoint(){//return normal distributed random point in actual bounds
+    var rnd = rndBmtPoint();
+    return Point(centerPoint.x+dx*rnd.x/2, centerPoint.y+dx*rnd.y/2)
+}
+
+function pointEquals(a,b){
+    return (a.x==b.x)&&(a.y==b.y);
+}
+
+function generatePoints(){
+    clearMap();
+    initBounds();
+    for(var i = 0; i < pointCount; i++)
+    {
+        //var point = randomPoint();
+        var point = normalDistributedRandomPoint();
+        points.push(point);
+        if(pointCount < 100){
+            var marker = new ymaps.Placemark([point.x, point.y],{iconContent:(""+i)});
+            myMap.geoObjects.add(marker);
+            mapObjects.push(marker);
+        }
+    }
+}
+
+function distance(a,b){
+    return Math.abs(b.x-a.x) + Math.abs(b.y-a.y); // manhattan distance
+}
+
+function clasterize(){
+    var centroids = [];
+    var stop_flag = false;
+    var clusters = [];
+    var max_distance = distance(lb,rt);
+    var counter = 0;
+    var i,j,min_distance,centroid_index,bottomLeft,topRight,p,dist;
+    for(i = 0; i < clusterCount; i++){ // init centroids
+        centroids[i] = randomPoint();
+    }
+    stop_flag = false;
+    while((!stop_flag) && (counter < maxIterationsCount)){ //main loop
+        for(i = 0; i < clusterCount; i++){ // flush clusters
+            clusters[i] = [];
+        };
+        for(i = 0; i < points.length; i++){ // associate points with centroids
+            min_distance = max_distance;
+            centroid_index = 0; // index of associated centroid
+            for(j = 0; j < clusterCount; j++){ //calculate distances
+                dist = distance(points[i],centroids[j])
+                if(min_distance > dist){
+                    min_distance = dist;
+                    centroid_index = j;
+                }
+            }
+            clusters[centroid_index].push(i);
+        };
+        stop_flag = true; // flush stop flag    
+        for(i=0;i<clusterCount;i++){ // recalculate centroids
+            bottomLeft = Point(rt.x,rt.y);
+            topRight = Point(lb.x,lb.y);
+            for(j=0;j<clusters[i].length;j++){
+                p = points[clusters[i][j]];
+                bottomLeft.x = Math.min(bottomLeft.x,p.x);
+                bottomLeft.y = Math.min(bottomLeft.y,p.y);
+                topRight.x = Math.max(topRight.x,p.x);
+                topRight.y = Math.max(topRight.y,p.y);
+            };
+            var new_centroid = center(bottomLeft,topRight);
+            var pe = pointEquals(centroids[i], new_centroid);
+            stop_flag = stop_flag && pe;
+            centroids[i] = new_centroid;
+        };
+        counter++;
+    };
+    var cluster_objects = [];
+    for(i=0;i<clusterCount;i++){
+        var cluster_points = [];
+        for(j=0;j<clusters[i].length;j++){
+            cluster_points[j] = points[clusters[i][j]];
+        };
+        cluster_objects.push({centroid:centroids[i],points:cluster_points});
+    };
+    return cluster_objects;
+}
+</script>
+</head>
+<body>
+    <div id="map" style="width:800px; height:600px"></div>
+    <input type="button" id="initButton" value="Наделать кластеров"/>
+    <div>
+        <code>
+            Кластеризация по методу к-средних.
+            Центроиды генерируются случайным образом.
+            На 10000 точек и 100 кластерах сходится примерно за 15 сек.
+            Что можно улучшить: изменить алгоритм так, чтобы в кластерах было примерно равное число точек; учесть границы районов; выбирать центроиды из входных точек, а не генерить рандомные; проверить алгоритм на реальных данных.
+        </code>
+    </div>
+</body>
+
+</html>
