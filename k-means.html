@@ -8,7 +8,7 @@
 var myMap;
 
 var pointCount = 1000;
-var clusterCount = 30;
+var clusterCount = 27;
 var mapObjects = [];
 var points = [];
 var lb, tr, dx, dy;
@@ -58,7 +58,7 @@ function init () {
     myMap.controls.add('zoomControl', { left: 5, top: 5 });
 
     document.getElementById('initButton').onclick = function () {
-  	generatePoints();
+      generatePoints();
         var clusters = clasterize();
         drawClusters(clusters);
     };
@@ -81,7 +81,7 @@ function drawClusters(clusters){
         mapObjects.push(route);    
         var marker = new ymaps.Placemark(
             [clusters[i].centroid.x,clusters[i].centroid.y],
-            {iconContent:i,balloonContent: 'points: '+clusters[i].points.length},
+            {iconContent:clusters[i].points.length,balloonContent: 'points: '+clusters[i].points.length},
             {preset: 'twirl#violetIcon'}
         );
         myMap.geoObjects.add(marker);
@@ -125,8 +125,8 @@ function generatePoints(){
     initBounds();
     for(var i = 0; i < pointCount; i++)
     {
-        //var point = randomPoint();
-        var point = normalDistributedRandomPoint();
+        var point = randomPoint();
+        //var point = normalDistributedRandomPoint();
         points.push(point);
         if(pointCount < 100){
             var marker = new ymaps.Placemark([point.x, point.y],{iconContent:(""+i)});
@@ -136,8 +136,13 @@ function generatePoints(){
     }
 }
 
+function sqr(a){
+    return a*a;
+}
+
 function distance(a,b){
-    return Math.abs(b.x-a.x) + Math.abs(b.y-a.y); // manhattan distance
+    //return Math.abs(b.x-a.x) + Math.abs(b.y-a.y); // manhattan distance
+    return sqr(Math.abs(b.x-a.x)) + sqr(Math.abs(b.y-a.y)); // square of hypotenuse
 }
 
 function clasterize(){
@@ -168,17 +173,19 @@ function clasterize(){
             clusters[centroid_index].push(i);
         };
         stop_flag = true; // flush stop flag    
-        for(i=0;i<clusterCount;i++){ // recalculate centroids
-            bottomLeft = Point(rt.x,rt.y);
-            topRight = Point(lb.x,lb.y);
-            for(j=0;j<clusters[i].length;j++){
+        for(i=0;i<clusterCount;i++){ // recalculate centroids, we use mass center algorithm
+            var l = clusters[i].length;
+            var new_centroid = Point(0,0);;
+            for(j=0;j<l;j++){
                 p = points[clusters[i][j]];
-                bottomLeft.x = Math.min(bottomLeft.x,p.x);
-                bottomLeft.y = Math.min(bottomLeft.y,p.y);
-                topRight.x = Math.max(topRight.x,p.x);
-                topRight.y = Math.max(topRight.y,p.y);
+                //new_centroid.x += p.x/(l+1);
+                //new_centroid.y += p.y/(l+1);
+                new_centroid.x += p.x/l;
+                new_centroid.y += p.y/l;
             };
-            var new_centroid = center(bottomLeft,topRight);
+            // add centerPoint to centroid
+            //new_centroid.x += centerPoint.x/(l+1);
+            //new_centroid.y += centerPoint.y/(l+1);            
             var pe = pointEquals(centroids[i], new_centroid);
             stop_flag = stop_flag && pe;
             centroids[i] = new_centroid;
@@ -193,6 +200,7 @@ function clasterize(){
         };
         cluster_objects.push({centroid:centroids[i],points:cluster_points});
     };
+    console.log(counter);
     return cluster_objects;
 }
 </script>
