@@ -7,8 +7,8 @@
 <script type="text/javascript">
 var myMap;
 
-var pointCount = 1000;
-var clusterCount = 27;
+var pointCount = 3000;
+var clusterCount = 103;
 var mapObjects = [];
 var points = [];
 var lb, tr, dx, dy;
@@ -145,6 +145,14 @@ function distance(a,b){
     return sqr(Math.abs(b.x-a.x)) + sqr(Math.abs(b.y-a.y)); // square of hypotenuse
 }
 
+function distance2(a,b){
+    return Math.sqrt(sqr(Math.abs(b.x-a.x)) + sqr(Math.abs(b.y-a.y)));
+}
+
+function rand(N) {
+    return Math.floor(Math.random() * N);
+}
+
 function clasterize(){
     var centroids = [];
     var stop_flag = false;
@@ -152,9 +160,60 @@ function clasterize(){
     var max_distance = distance(lb,rt);
     var counter = 0;
     var i,j,min_distance,centroid_index,bottomLeft,topRight,p,dist;
-    for(i = 0; i < clusterCount; i++){ // init centroids
-        centroids[i] = randomPoint();
+
+    // k-means
+    //for(i = 0; i < clusterCount; i++){ // init centroids
+    //    centroids[i] = randomPoint();
+    //}
+    // end k-means
+
+    // k-means++
+    i = rand(points.length);
+    centroids[0] = new Point(points[i].x, points[i].y);
+
+    while(centroids.length < clusterCount) {
+        var distances = [],
+            sdx = 0;
+        for(i = 0; i < points.length; i++) {
+            var p = points[i],
+            min = max_distance;
+            for (j = 0; j < centroids.length; j++) {
+                min = Math.min(min, distance(p, centroids[j]));
+            }
+            distances.push(min);
+            sdx += min;
+        }
+        var rnd = Math.random()*sdx;
+        var sdx2 = 0;
+        for(i = 0; i < distances.length; i++) {
+            sdx2 += distances[i];
+            if(sdx2 > rnd) {
+                var stop = true;
+                for(j = 0; j < centroids.length; j++) {
+                    if (pointEquals(centroids[j], points[i])) {
+                        stop = false;
+                        break;
+                    }
+                }
+                if (stop) {
+                    break;
+                }
+            }
+        }
+        if (i < distances.length) {
+            centroids.push(new Point(points[i].x, points[i].y))
+        } else {
+            break;
+        }
     }
+
+    if (centroids.length < clusterCount) {
+        if(!confitm("Cannot find " + clusterCount + " different centroids. Do you want to clusterize "+points.length+" points on " + centroids.length + " clusters?")) {
+            throw "Cannot find " + clusterCount + " different centroids."
+        }
+    }
+    // end k-means++
+
     stop_flag = false;
     while((!stop_flag) && (counter < maxIterationsCount)){ //main loop
         for(i = 0; i < clusterCount; i++){ // flush clusters
@@ -164,7 +223,7 @@ function clasterize(){
             min_distance = max_distance;
             centroid_index = 0; // index of associated centroid
             for(j = 0; j < clusterCount; j++){ //calculate distances
-                dist = distance(points[i],centroids[j])
+                dist = distance2(points[i],centroids[j])
                 if(min_distance > dist){
                     min_distance = dist;
                     centroid_index = j;
@@ -178,14 +237,10 @@ function clasterize(){
             var new_centroid = Point(0,0);;
             for(j=0;j<l;j++){
                 p = points[clusters[i][j]];
-                //new_centroid.x += p.x/(l+1);
-                //new_centroid.y += p.y/(l+1);
                 new_centroid.x += p.x/l;
                 new_centroid.y += p.y/l;
             };
-            // add centerPoint to centroid
-            //new_centroid.x += centerPoint.x/(l+1);
-            //new_centroid.y += centerPoint.y/(l+1);            
+            // add centerPoint to centroid          
             var pe = pointEquals(centroids[i], new_centroid);
             stop_flag = stop_flag && pe;
             centroids[i] = new_centroid;
